@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TVJROK.API/TVJROK.API.csproj" />
+    <Project Path="src/TVJROK.Application/TVJROK.Application.csproj" />
+    <Project Path="src/TVJROK.Domain/TVJROK.Domain.csproj" />
+    <Project Path="src/TVJROK.Infrastructure/TVJROK.Infrastructure.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,69 @@
+
+/* =========================================
+   TV JROK - APP STYLES
+========================================= */
+
+/* Root Application */
+#root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0 auto;
+}
+
+/* Application Container */
+.app {
+  width: 100%;
+  min-height: 100vh;
+  overflow-x: clip;
+}
+
+/* Smooth Images */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Buttons */
+button {
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+/* Form Elements */
+input,
+textarea,
+select {
+  width: 100%;
+  max-width: 100%;
+  border-radius: var(--radius-input);
+}
+
+/* Responsive Layout */
+@media (max-width: 768px) {
+  #root {
+    width: 100%;
+  }
+
+  .app {
+    overflow-x: clip;
+  }
+}
+
+/* Small Mobile */
+@media (max-width: 380px) {
+  body {
+    font-size: 13px;
+  }
+}

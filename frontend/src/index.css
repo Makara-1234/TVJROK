@@ -1,0 +1,221 @@
+
+/* =========================================
+   TV JROK - GLOBAL DESIGN SYSTEM
+========================================= */
+
+/* Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Battambang:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700;800&family=Koulen&display=swap');
+
+/* Tailwind CSS */
+@import "tailwindcss";
+
+/* =========================================
+   DESIGN TOKENS
+========================================= */
+
+:root {
+  /* Typography */
+  --font-khmer: 'Battambang', sans-serif;
+  --font-english: 'DM Sans', sans-serif;
+  --font-brand: 'Koulen', sans-serif;
+
+  /* Brand Colors */
+  --primary: #F4511E;
+  --primary-dark: #D94012;
+  --dark-brown: #1C1713;
+
+  /* Text Colors */
+  --text-primary: #211A15;
+  --text-muted: #81786F;
+
+  /* Background */
+  --background: #F7F5F1;
+  --surface: #FFFFFF;
+  --surface-orange: #FFF2EB;
+  --border: #EAE4DC;
+
+  /* Status */
+  --success: #239653;
+  --error: #C62828;
+  --warning: #785A19;
+
+  /* Border Radius */
+  --radius-input: 9px;
+  --radius-button: 11px;
+  --radius-card: 17px;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(28, 23, 19, 0.05);
+  --shadow-md: 0 5px 18px rgba(28, 23, 19, 0.08);
+}
+
+/* =========================================
+   RESET
+========================================= */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  font-family: var(--font-english), var(--font-khmer), sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  font-family: var(--font-english), var(--font-khmer), sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: var(--background);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* =========================================
+   TYPOGRAPHY
+========================================= */
+
+html,
+body {
+  font-family: var(--font-english), var(--font-khmer), sans-serif;
+}
+
+/* Khmer text only when explicitly marked */
+:lang(km) {
+  font-family: var(--font-khmer), sans-serif;
+}
+
+/* English text */
+:lang(en) {
+  font-family: var(--font-english), sans-serif;
+}
+
+/* Fix heading color inheritance */
+h1, h2, h3, h4, h5, h6 {
+  color: inherit;
+}
+
+/* English */
+:lang(en) {
+  font-family: var(--font-english), sans-serif;
+}
+
+/* Brand */
+.brand,
+.logo-text {
+  font-family: var(--font-brand);
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+/* =========================================
+   FORM ELEMENTS
+========================================= */
+
+button,
+input,
+textarea,
+select {
+  font-family: var(--font-english), var(--font-khmer), sans-serif;
+}
+
+button {
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  color: var(--text-primary);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #A69C91;
+  opacity: 1;
+}
+
+/* Prevent mobile input zoom */
+input,
+textarea,
+select {
+  font-size: 16px;
+}
+
+/* =========================================
+   IMAGES
+========================================= */
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* =========================================
+   LINKS
+========================================= */
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* =========================================
+   SCROLLBAR
+========================================= */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #B7B0A8 transparent;
+}
+
+/* =========================================
+   RESPONSIVE TYPOGRAPHY
+========================================= */
+
+/* Tablet */
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+}
+
+/* Mobile */
+@media (max-width: 600px) {
+  body {
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  h1 {
+    font-size: 24px;
+    line-height: 1.7;
+  }
+
+  h2 {
+    font-size: 21px;
+    line-height: 1.7;
+  }
+
+  h3 {
+    font-size: 18px;
+    line-height: 1.6;
+  }
+
+  button {
+    min-height: 40px;
+  }
+}
