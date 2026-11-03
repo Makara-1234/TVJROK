@@ -76,16 +76,21 @@ builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IProductService, ProductService>();
 
 // CORS for React + Vite
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("ReactFrontend", policy =>
     {
         policy
-            .WithOrigins("http://localhost:5173")
+            .WithOrigins(
+                "http://localhost:5173",
+                "https://frontend-one-gold-67.vercel.app"
+            )
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
 });
+
 
 var app = builder.Build();
 
@@ -99,7 +104,6 @@ app.UseHttpsRedirection();
 
 app.UseCors("ReactFrontend");
 
-app.UseCors("AllowFrontend");
 
 app.MapControllers();
 
