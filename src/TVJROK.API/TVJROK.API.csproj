@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\TVJROK.Application\TVJROK.Application.csproj" />
     <ProjectReference Include="..\TVJROK.Infrastructure\TVJROK.Infrastructure.csproj" />
+    <ProjectReference Include="..\TVJROK.Migrations.Postgres\TVJROK.Migrations.Postgres.csproj" />
   </ItemGroup>
 
 </Project>

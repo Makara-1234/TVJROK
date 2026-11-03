@@ -11,7 +11,8 @@ using TVJROK.Application.Features.Payments;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Database
+
+// Database Configuration
 var connectionString = builder.Configuration
     .GetConnectionString("DefaultConnection");
 
@@ -23,8 +24,41 @@ if (string.IsNullOrWhiteSpace(connectionString))
 }
 
 builder.Services.AddDbContext<TVJROKDbContext>(options =>
-    options.UseSqlServer(connectionString)
-);
+{
+    if (builder.Environment.IsProduction())
+    {
+        options.UseNpgsql(
+            connectionString,
+            npgsqlOptions =>
+                npgsqlOptions.MigrationsAssembly(
+                    "TVJROK.Migrations.Postgres"
+                )
+        );
+    }
+    else
+    {
+        options.UseSqlServer(
+            connectionString,
+            sqlOptions =>
+                sqlOptions.MigrationsAssembly(
+                    "TVJROK.Infrastructure"
+                )
+        );
+    }
+});
+
+
+builder.Services.AddDbContext<TVJROKDbContext>(options =>
+{
+    if (builder.Environment.IsProduction())
+    {
+        options.UseNpgsql(connectionString);
+    }
+    else
+    {
+        options.UseSqlServer(connectionString);
+    }
+});
 
 // API Services
 
