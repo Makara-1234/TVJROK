@@ -1,4 +1,4 @@
-
+using Npgsql;
 using Microsoft.EntityFrameworkCore;
 using TVJROK.Infrastructure.Persistence;
 using TVJROK.Application.Features.Categories.Interfaces;
@@ -7,12 +7,14 @@ using TVJROK.Application.Features.Products.Interfaces;
 using TVJROK.Application.Features.Orders.Interfaces;
 using TVJROK.Application.Features.Tables.Interfaces;
 using TVJROK.Application.Features.Payments;
+using TVJROK.Application.Features.Settings.Interfaces;
 
 
 var builder = WebApplication.CreateBuilder(args);
 
 
-// Database Configuration
+
+ // Database Configuration
 var connectionString = builder.Configuration
     .GetConnectionString("DefaultConnection");
 
@@ -27,6 +29,31 @@ builder.Services.AddDbContext<TVJROKDbContext>(options =>
 {
     if (builder.Environment.IsProduction())
     {
+        // Convert Render PostgreSQL URL to Npgsql connection string
+        if (Uri.TryCreate(connectionString, UriKind.Absolute, out var uri)
+            && (uri.Scheme == "postgres" || uri.Scheme == "postgresql"))
+        {
+            var userInfo = uri.UserInfo.Split(':', 2);
+
+            var dbName = Uri.UnescapeDataString(
+                uri.AbsolutePath.TrimStart('/')
+            );
+
+            var npgsqlBuilder = new NpgsqlConnectionStringBuilder
+            {
+                Host = uri.Host,
+                Port = uri.Port > 0 ? uri.Port : 5432,
+                Database = dbName,
+                Username = Uri.UnescapeDataString(userInfo[0]),
+                Password = userInfo.Length > 1
+                    ? Uri.UnescapeDataString(userInfo[1])
+                    : "",
+                SslMode = SslMode.Prefer
+            };
+
+            connectionString = npgsqlBuilder.ConnectionString;
+        }
+
         options.UseNpgsql(
             connectionString,
             npgsqlOptions =>
@@ -48,17 +75,7 @@ builder.Services.AddDbContext<TVJROKDbContext>(options =>
 });
 
 
-builder.Services.AddDbContext<TVJROKDbContext>(options =>
-{
-    if (builder.Environment.IsProduction())
-    {
-        options.UseNpgsql(connectionString);
-    }
-    else
-    {
-        options.UseSqlServer(connectionString);
-    }
-});
+
 
 // API Services
 
@@ -77,6 +94,12 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<IProductImageService, ProductImageService>();
+
+// Restaurant Settings Service
+builder.Services.AddScoped<
+    IRestaurantSettingService,
+    RestaurantSettingService
+>();
 
 // payment services
 builder.Services.AddScoped<IPaymentService, PaymentService>();

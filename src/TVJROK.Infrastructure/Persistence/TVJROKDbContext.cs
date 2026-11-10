@@ -21,10 +21,45 @@ public class TVJROKDbContext : DbContext
     public DbSet<Promotion> Promotions => Set<Promotion>();
     public DbSet<OrderStatusHistory> OrderStatusHistories
         => Set<OrderStatusHistory>();
+    public DbSet<RestaurantSetting> RestaurantSettings
+    => Set<RestaurantSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // Restaurant Settings
+modelBuilder.Entity<RestaurantSetting>()
+    .Property(x => x.RestaurantName)
+    .HasMaxLength(200)
+    .IsRequired();
+
+modelBuilder.Entity<RestaurantSetting>()
+    .Property(x => x.PhoneNumber)
+    .HasMaxLength(30);
+
+modelBuilder.Entity<RestaurantSetting>()
+    .Property(x => x.Address)
+    .HasMaxLength(500);
+
+modelBuilder.Entity<RestaurantSetting>()
+    .Property(x => x.LogoUrl)
+    .HasMaxLength(1000);
+
+modelBuilder.Entity<RestaurantSetting>()
+    .Property(x => x.CurrencyCode)
+    .HasMaxLength(3)
+    .IsRequired();
+
+modelBuilder.Entity<RestaurantSetting>()
+    .Property(x => x.OpeningTime)
+    .HasMaxLength(5)
+    .IsRequired();
+
+modelBuilder.Entity<RestaurantSetting>()
+    .Property(x => x.ClosingTime)
+    .HasMaxLength(5)
+    .IsRequired();
 
         // Additional field constraints
 
