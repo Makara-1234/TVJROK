@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search, Plus, Package, CheckCircle2, Star, Ban,
   Pencil, Trash2, RefreshCw, X, Upload, ImagePlus,
-  UtensilsCrossed, Salad, Grid2X2,
-Fish, Beef, Flame, CookingPot, Leaf, Soup, Beer, CupSoda,
-  PlusCircle, Gift, Drumstick, Sandwich, ChevronLeft, ChevronRight,
+  List, LayoutGrid, ArrowUpDown,
+  UtensilsCrossed, Salad, Grid2X2, Fish, Beef, Flame,
+  CookingPot, Leaf, Soup, Beer, CupSoda, PlusCircle,
+  Gift, Drumstick, Sandwich, ChevronLeft, ChevronRight,
 } from "lucide-react";
 
 import { productService } from "../services/productService";
@@ -62,6 +63,8 @@ export default function ProductManagement() {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [filter, setFilter] = useState("All");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "name-asc" | "price-low" | "price-high">("newest");
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -74,7 +77,15 @@ export default function ProductManagement() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const categoryScrollRef = useRef<HTMLDivElement>(null);
 
-  const fetchData = async (showRefresh = false) => {
+  // Prevent overlapping requests when the interval and manual refresh
+  // happen at nearly the same time.
+  const isFetchingRef = useRef(false);
+
+  const fetchData = useCallback(async (showRefresh = false) => {
+    if (isFetchingRef.current) return;
+
+    isFetchingRef.current = true;
+
     try {
       if (showRefresh) setRefreshing(true);
       setError("");
@@ -90,20 +101,25 @@ export default function ProductManagement() {
       console.error("Load products failed:", err);
       setError("Unable to load products. Please check your API connection.");
     } finally {
+      isFetchingRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchData();
+    // Load immediately when the page opens.
+    void fetchData();
 
+    // Refresh product and active-category data every 10 seconds.
     const interval = window.setInterval(() => {
-      fetchData();
+      void fetchData();
     }, 10000);
 
-    return () => window.clearInterval(interval);
-  }, []);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [fetchData]);
 
   const availableCount = products.filter((p) => p.isAvailable).length;
   const featuredCount = products.filter((p) => p.isFeatured).length;
@@ -130,6 +146,24 @@ export default function ProductManagement() {
       return matchesSearch && matchesCategory && matchesFilter;
     });
   }, [products, search, selectedCategory, filter]);
+
+  const sortedProducts = useMemo(() => {
+    const result = [...filteredProducts];
+    switch (sortBy) {
+      case "oldest":
+        return result.reverse();
+      case "name-asc":
+        return result.sort((a, b) => a.name.localeCompare(b.name));
+      case "price-low":
+        return result.sort((a, b) => a.price - b.price);
+      case "price-high":
+        return result.sort((a, b) => b.price - a.price);
+      case "newest":
+      default:
+        // The API's current ordering is retained as newest-first.
+        return result;
+    }
+  }, [filteredProducts, sortBy]);
 
   const openCreateModal = () => {
     setEditingProduct(null);
@@ -520,7 +554,58 @@ export default function ProductManagement() {
         </div>
       </section>
 
-      {/* Product Grid */}
+
+      {/* Product list heading and view controls */}
+      <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+            <span className="rounded-xl bg-orange-50 p-2 text-orange-600"><Package size={18} /></span>
+            Products List
+          </h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Showing {sortedProducts.length} {sortedProducts.length === 1 ? "product" : "products"}
+          </p>
+        </div>
+        <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:w-auto">
+          <label className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-500 sm:flex-none">
+            <ArrowUpDown size={16} />
+            <span className="whitespace-nowrap">Sort by</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              className="min-w-0 bg-transparent font-semibold text-slate-800 outline-none"
+            >
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="name-asc">Name: A–Z</option>
+              <option value="price-low">Price: Low to High</option>
+              <option value="price-high">Price: High to Low</option>
+            </select>
+          </label>
+          <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+            <button
+              type="button"
+              aria-label="Grid view"
+              aria-pressed={viewMode === "grid"}
+              onClick={() => setViewMode("grid")}
+              className={`rounded-lg p-2 transition ${viewMode === "grid" ? "bg-orange-500 text-white shadow-sm" : "text-slate-500 hover:text-orange-600"}`}
+            >
+              <LayoutGrid size={18} />
+            </button>
+            <button
+              type="button"
+              aria-label="List view"
+              aria-pressed={viewMode === "list"}
+              onClick={() => setViewMode("list")}
+              className={`rounded-lg p-2 transition ${viewMode === "list" ? "bg-orange-500 text-white shadow-sm" : "text-slate-500 hover:text-orange-600"}`}
+            >
+              <List size={18} />
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Product Grid / List */}
       {loading ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-slate-400">
           Loading products...
@@ -533,9 +618,9 @@ export default function ProductManagement() {
             Try changing your search or filters.
           </p>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          {filteredProducts.map((product) => {
+      ) : viewMode === "grid" ? (
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-5 xl:grid-cols-4">
+          {sortedProducts.map((product) => {
             const primaryImage =
               product.images.find((image) => image.isPrimary) ||
               product.images[0];
@@ -545,11 +630,14 @@ export default function ProductManagement() {
                 key={product.id}
                 className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-md"
               >
-                <div className="relative flex h-48 items-center justify-center bg-slate-50">
+                <div className="relative flex h-28 items-center justify-center bg-slate-50 sm:h-48">
                   {primaryImage ? (
                     <img
                       src={primaryImage.imageUrl}
                       alt={product.name}
+                      onError={(event) => {
+                        event.currentTarget.style.display = "none";
+                      }}
                       className="h-full w-full object-cover"
                     />
                   ) : (
@@ -582,22 +670,22 @@ export default function ProductManagement() {
                   )}
                 </div>
 
-                <div className="p-4">
+                <div className="p-2.5 sm:p-4">
                   <p className="text-xs font-medium text-slate-400">
                     {product.categoryName}
                   </p>
 
-                  <h3 className="mt-1 truncate font-bold text-slate-900">
+                  <h3 className="mt-1 line-clamp-2 min-h-10 text-sm font-bold leading-5 text-slate-900 sm:text-base">
                     {product.name}
                   </h3>
 
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    <span className="text-lg font-bold text-orange-600">
+                  <div className="mt-2 flex flex-col items-start justify-between gap-1.5 sm:mt-3 sm:flex-row sm:items-center">
+                    <span className="text-base font-bold text-orange-600 sm:text-lg">
                       {money(product.price)}
                     </span>
 
                     <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      className={`rounded-full px-2 py-1 text-[10px] font-semibold whitespace-nowrap sm:px-3 sm:text-xs ${
                         product.isAvailable
                           ? "bg-green-50 text-green-600"
                           : "bg-red-50 text-red-600"
@@ -607,11 +695,11 @@ export default function ProductManagement() {
                     </span>
                   </div>
 
-                  <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
+                  <div className="mt-2 flex items-center justify-between gap-1 border-t border-slate-100 pt-2 sm:mt-4 sm:gap-2 sm:pt-3">
                     <button
                       type="button"
                       onClick={() => openEditModal(product)}
-                      className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-orange-600"
+                      className="flex shrink-0 items-center gap-1 rounded-lg p-1.5 text-[11px] font-semibold text-slate-600 hover:bg-orange-50 hover:text-orange-600 sm:gap-1.5 sm:p-0 sm:text-xs"
                     >
                       <Pencil size={15} />
                       Edit
@@ -620,7 +708,7 @@ export default function ProductManagement() {
                     <button
                       type="button"
                       onClick={() => handleDelete(product)}
-                      className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-red-600"
+                      className="flex shrink-0 items-center gap-1 rounded-lg p-1.5 text-[11px] font-semibold text-slate-600 hover:bg-red-50 hover:text-red-600 sm:gap-1.5 sm:p-0 sm:text-xs"
                     >
                       <Trash2 size={15} />
                       Delete
@@ -632,12 +720,12 @@ export default function ProductManagement() {
                       aria-checked={product.isAvailable}
                       title="Toggle availability"
                       onClick={() => handleToggleAvailable(product)}
-                      className={`relative h-6 w-11 rounded-full transition ${
+                      className={`!relative !h-6 !w-11 !min-h-0 !min-w-0 !flex-none !shrink-0 !rounded-full !p-0 !shadow-none transition ${
                         product.isAvailable ? "bg-orange-500" : "bg-slate-300"
                       }`}
                     >
                       <span
-                        className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${
+                        className={`!absolute !top-1 !h-4 !w-4 !min-h-0 !min-w-0 !rounded-full !bg-white !p-0 !shadow-none transition ${
                           product.isAvailable ? "left-6" : "left-1"
                         }`}
                       />
@@ -648,28 +736,69 @@ export default function ProductManagement() {
             );
           })}
         </div>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="hidden grid-cols-[minmax(220px,2fr)_1fr_1fr_1fr_auto] gap-4 border-b border-slate-100 bg-slate-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 md:grid">
+            <span>Product</span><span>Category</span><span>Price</span><span>Status</span><span>Actions</span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {sortedProducts.map((product) => {
+              const primaryImage = product.images.find((image) => image.isPrimary) || product.images[0];
+              return (
+                <div key={product.id} className="grid grid-cols-1 gap-3 px-4 py-4 md:grid-cols-[minmax(220px,2fr)_1fr_1fr_1fr_auto] md:items-center md:gap-4 md:px-5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="h-14 w-14 flex-none overflow-hidden rounded-xl bg-slate-100">
+                      {primaryImage ? <img src={primaryImage.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-slate-300"><ImagePlus size={22} /></div>}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-slate-900">{product.name}</p>
+                      <p className="truncate text-xs text-slate-500">{product.description || "No description"}</p>
+                      {product.isFeatured && <span className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-orange-600"><Star size={12} fill="currentColor" /> Featured</span>}
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-600 md:block"><span className="mr-2 text-xs text-slate-400 md:hidden">Category:</span>{product.categoryName}</p>
+                  <p className="font-bold text-orange-600">{money(product.price)}</p>
+                  <span className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${product.isAvailable ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>{product.isAvailable ? "Available" : "Unavailable"}</span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => openEditModal(product)} aria-label={`Edit ${product.name}`} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:border-orange-300 hover:text-orange-600"><Pencil size={15} /></button>
+                    <button type="button" onClick={() => handleDelete(product)} aria-label={`Delete ${product.name}`} className="rounded-lg border border-red-100 p-2 text-red-500 hover:bg-red-50"><Trash2 size={15} /></button>
+                    <button type="button" role="switch" aria-checked={product.isAvailable} aria-label={`Toggle availability for ${product.name}`} onClick={() => handleToggleAvailable(product)} className={`!relative !h-6 !w-11 !min-h-0 !min-w-0 !flex-none !shrink-0 !rounded-full !p-0 !shadow-none transition ${product.isAvailable ? "bg-orange-500" : "bg-slate-300"}`}>
+                      <span className={`!absolute !top-1 !h-4 !w-4 !min-h-0 !min-w-0 !rounded-full !bg-white !p-0 !shadow-none transition ${product.isAvailable ? "left-6" : "left-1"}`} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       <p className="text-xs text-slate-400">
-        Showing {filteredProducts.length} of {products.length} products · Auto refresh every 10 seconds
+        Showing {sortedProducts.length} of {products.length} products · Auto refresh every 10 seconds
       </p>
 
       {/* Add / Edit Modal */}
       {modalOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4"
+          className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-slate-950/55 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) closeModal();
           }}
         >
-          <div className="my-8 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between">
+          <div className="flex max-h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:rounded-3xl">
+            {/* Modal header */}
+            <div className="flex flex-none items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-6">
               <div>
-                <h3 className="text-xl font-bold text-slate-900">
-                  {editingProduct ? "Edit Product" : "Add New Product"}
-                </h3>
-                <p className="mt-1 text-sm text-slate-400">
-                  Enter product information below.
+                <div className="flex items-center gap-2">
+                  <span className="rounded-xl bg-orange-50 p-2 text-orange-600">
+                    <Package size={19} />
+                  </span>
+                  <h3 className="text-lg font-bold text-slate-900 sm:text-xl">
+                    {editingProduct ? "Edit Product" : "Add New Product"}
+                  </h3>
+                </div>
+                <p className="mt-2 text-xs text-slate-500 sm:text-sm">
+                  {editingProduct ? "Update the product details below." : "Add a new item to your restaurant menu."}
                 </p>
               </div>
 
@@ -677,174 +806,185 @@ export default function ProductManagement() {
                 type="button"
                 onClick={closeModal}
                 disabled={saving}
-                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
+                aria-label="Close product form"
+                className="rounded-xl border border-slate-200 p-2.5 text-slate-500 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 disabled:opacity-50"
               >
-                <X size={20} />
+                <X size={19} />
               </button>
             </div>
 
-            <div className="mt-5 space-y-4">
-              {/* Image */}
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Product Image
-                </label>
-
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex h-40 w-full flex-col items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 hover:border-orange-400"
-                >
-                  {preview ? (
-                    <img
-                      src={preview}
-                      alt="Product preview"
-                      className="h-full w-full object-contain"
-                    />
-                  ) : (
-                    <>
-                      <Upload size={27} className="text-slate-400" />
-                      <span className="mt-2 text-sm font-medium text-slate-600">
-                        Click to upload image
-                      </span>
-                      <span className="mt-1 text-xs text-slate-400">
-                        JPG, PNG, WEBP · Maximum 5MB
-                      </span>
-                    </>
-                  )}
-                </button>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  hidden
-                  onChange={(e) => handleFileChange(e.target.files?.[0])}
-                />
-              </div>
-
-              {/* Name */}
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Product Name *
-                </label>
-                <input
-                  value={form.name}
-                  onChange={(e) =>
-                    setForm({ ...form, name: e.target.value })
-                  }
-                  placeholder="Enter product name"
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-orange-500"
-                />
-              </div>
-
-              {/* Category and Price */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Scrollable form body */}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-[190px_minmax(0,1fr)] sm:gap-6">
+                {/* Image upload */}
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Category *
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">
+                    Product Image
                   </label>
-                  <select
-                    value={form.categoryId}
-                    onChange={(e) =>
-                      setForm({ ...form, categoryId: e.target.value })
-                    }
-                    className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-orange-500"
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="group relative flex h-44 w-full flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-orange-200 bg-orange-50/50 transition hover:border-orange-400 hover:bg-orange-50 sm:h-48"
                   >
-                    <option value="">Select category</option>
-                    {categories.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
+                    {preview ? (
+                      <img
+                        src={preview}
+                        alt="Product preview"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <>
+                        <span className="rounded-2xl bg-white p-3 text-orange-500 shadow-sm">
+                          <Upload size={25} />
+                        </span>
+                        <span className="mt-3 text-sm font-semibold text-slate-700">
+                          Upload image
+                        </span>
+                        <span className="mt-1 text-center text-[11px] text-slate-500">
+                          JPG, PNG or WEBP
+                          <br />
+                          Maximum 5 MB
+                        </span>
+                      </>
+                    )}
+                    {preview && (
+                      <span className="absolute inset-x-2 bottom-2 rounded-lg bg-slate-950/65 px-2 py-1.5 text-center text-xs font-medium text-white opacity-0 transition group-hover:opacity-100">
+                        Change image
+                      </span>
+                    )}
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    hidden
+                    onChange={(e) => handleFileChange(e.target.files?.[0])}
+                  />
+                  <p className="mt-2 text-xs leading-5 text-slate-400">
+                    Choose a clear photo of the food or drink.
+                  </p>
                 </div>
 
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Price (KHR) *
+                {/* Product fields */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      Product Name <span className="text-orange-600">*</span>
+                    </label>
+                    <input
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      placeholder="e.g. Khmer Fried Rice"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-4 focus:ring-orange-500/10 sm:text-sm"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-slate-700">
+                        Category <span className="text-orange-600">*</span>
+                      </label>
+                      <select
+                        value={form.categoryId}
+                        onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-base outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-500/10 sm:text-sm"
+                      >
+                        <option value="">Select category</option>
+                        {categories.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {category.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-slate-700">
+                        Price (KHR) <span className="text-orange-600">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={form.price}
+                        onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-500/10 sm:text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      Description
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={form.description || ""}
+                      onChange={(e) => setForm({ ...form, description: e.target.value })}
+                      placeholder="Add ingredients, flavor or serving details..."
+                      className="w-full resize-y rounded-xl border border-slate-200 bg-white p-3 text-base outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-4 focus:ring-orange-500/10 sm:text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Product visibility options */}
+              <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
+                <p className="mb-3 text-sm font-semibold text-slate-800">Product settings</p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                    <input
+                      type="checkbox"
+                      checked={form.isAvailable}
+                      onChange={(e) => setForm({ ...form, isAvailable: e.target.checked })}
+                      className="h-4 w-4 accent-orange-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-800">Available</span>
+                      <span className="block text-xs text-slate-500">Customers can order this item</span>
+                    </span>
                   </label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={form.price}
-                    onChange={(e) =>
-                      setForm({ ...form, price: Number(e.target.value) })
-                    }
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-orange-500"
-                  />
+                  <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                    <input
+                      type="checkbox"
+                      checked={form.isFeatured}
+                      onChange={(e) => setForm({ ...form, isFeatured: e.target.checked })}
+                      className="h-4 w-4 accent-orange-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-800">Featured</span>
+                      <span className="block text-xs text-slate-500">Highlight this item on the menu</span>
+                    </span>
+                  </label>
                 </div>
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Description
-                </label>
-                <textarea
-                  rows={3}
-                  value={form.description || ""}
-                  onChange={(e) =>
-                    setForm({ ...form, description: e.target.value })
-                  }
-                  placeholder="Describe this product..."
-                  className="w-full resize-none rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-orange-500"
-                />
-              </div>
-
-              {/* Switches */}
-              <div className="flex flex-wrap gap-6">
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={form.isAvailable}
-                    onChange={(e) =>
-                      setForm({ ...form, isAvailable: e.target.checked })
-                    }
-                    className="accent-orange-500"
-                  />
-                  Available
-                </label>
-
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={form.isFeatured}
-                    onChange={(e) =>
-                      setForm({ ...form, isFeatured: e.target.checked })
-                    }
-                    className="accent-orange-500"
-                  />
-                  Featured
-                </label>
               </div>
 
               {formError && (
-                <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
+                <p role="alert" className="mt-4 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-600">
                   {formError}
                 </p>
               )}
+            </div>
 
-              <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  disabled={saving}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
+            {/* Sticky actions */}
+            <div className="flex flex-none gap-3 border-t border-slate-100 bg-white px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:justify-end sm:px-6">
+              <button
+                type="button"
+                onClick={closeModal}
+                disabled={saving}
+                className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:flex-none"
+              >
+                Cancel
+              </button>
 
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving || categories.length === 0}
-                  className="flex items-center gap-2 rounded-xl bg-orange-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-600 disabled:opacity-50"
-                >
-                  {saving ? "Saving..." : editingProduct ? "Save Changes" : "Create Product"}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving || categories.length === 0}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+              >
+                {saving ? "Saving..." : editingProduct ? "Save Changes" : "Create Product"}
+              </button>
             </div>
           </div>
         </div>

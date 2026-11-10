@@ -180,14 +180,18 @@ export default function CustomerPage() {
     };
   }, [cartOpen]);
 
+  // Load menu data immediately, then sync it every 10 seconds without reloading the page.
+  // Cart quantities are preserved; matching cart items receive the latest product details.
   useEffect(() => {
     let active = true;
+    let isFetching = false;
+    let hasLoadedOnce = false;
 
     const loadData = async () => {
-      try {
-        setLoading(true);
-        setError("");
+      if (isFetching) return;
+      isFetching = true;
 
+      try {
         const [productData, categoryData, tableData] = await Promise.all([
           productService.getAll(),
           categoryService.getAll(),
@@ -195,20 +199,53 @@ export default function CustomerPage() {
         ]);
 
         if (!active) return;
-        setProducts(productData.filter((product) => product.isAvailable));
-        setCategories(categoryData.filter((category) => category.isActive));
-        setTables(tableData.filter((table) => table.isActive));
+
+        const availableProducts = productData.filter((product) => product.isAvailable);
+        const activeCategories = categoryData.filter((category) => category.isActive);
+        const activeTables = tableData.filter((table) => table.isActive);
+
+        setProducts(availableProducts);
+        setCategories(activeCategories);
+        setTables(activeTables);
+        setError("");
+
+        // Keep the cart and quantities, but refresh price/image/name for products still available.
+        setCart((current) =>
+          current.map((item) => {
+            const latestProduct = availableProducts.find(
+              (product) => product.id === item.product.id
+            );
+            return latestProduct ? { ...item, product: latestProduct } : item;
+          })
+        );
+
+        // If the selected category was deactivated, return to all menu items.
+        setSelectedCategory((current) =>
+          current !== "All" && !activeCategories.some((category) => category.id === current)
+            ? "All"
+            : current
+        );
       } catch (err) {
         console.error("Failed to load customer ordering data:", err);
-        if (active) setError("មិនអាចទាញយកទិន្នន័យមុខម្ហូបបានទេ។ សូមព្យាយាមម្ដងទៀត។");
+        // Avoid interrupting the customer with background polling errors.
+        if (active && !hasLoadedOnce) {
+          setError("មិនអាចទាញយកទិន្នន័យមុខម្ហូបបានទេ។ សូមព្យាយាមម្ដងទៀត។");
+        }
       } finally {
-        if (active) setLoading(false);
+        isFetching = false;
+        if (active && !hasLoadedOnce) setLoading(false);
+        hasLoadedOnce = true;
       }
     };
 
-    loadData();
+    void loadData();
+    const intervalId = window.setInterval(() => {
+      void loadData();
+    }, 10000);
+
     return () => {
       active = false;
+      window.clearInterval(intervalId);
     };
   }, []);
 
