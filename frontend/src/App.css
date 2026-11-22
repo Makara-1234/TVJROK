@@ -3,7 +3,10 @@
    TV JROK - APP STYLES
 ========================================= */
 
-/* Root Application */
+/* =========================================
+   ROOT APPLICATION
+========================================= */
+
 #root {
   width: 100%;
   min-height: 100vh;
@@ -19,11 +22,15 @@
 
 /* Smooth Images */
 img {
+  display: block;
   max-width: 100%;
   height: auto;
 }
 
-/* Buttons */
+/* =========================================
+   BUTTONS
+========================================= */
+
 button {
   cursor: pointer;
   transition:
@@ -32,25 +39,70 @@ button {
     transform 0.2s ease;
 }
 
+/* =========================================
+   FOCUS ACCESSIBILITY
+========================================= */
+
+/* Buttons and links */
 button:focus-visible,
 a:focus-visible,
-input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 3px;
 }
 
-/* Form Elements */
+/* Inputs on other pages */
+input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+/* =========================================
+   ADMIN LOGIN - INPUT FOCUS
+========================================= */
+
+/*
+  Remove the extra browser/global outline
+  from Admin Login username and password.
+  The input wrapper provides its own focus
+  border and subtle orange glow.
+*/
+
+.admin-login-page input:focus,
+.admin-login-page input:focus-visible {
+  outline: none;
+  outline-offset: 0;
+  box-shadow: none;
+}
+
+/* Keep login input background transparent */
+.admin-login-page input {
+  background-color: transparent;
+}
+
+/* =========================================
+   FORM ELEMENTS
+========================================= */
+
 input,
 textarea,
 select {
-  width: 100%;
   max-width: 100%;
-  border-radius: var(--radius-input);
 }
 
-/* Responsive Layout */
+/* Keep project typography consistent */
+button,
+input,
+textarea,
+select {
+  font-family: var(--font-english), var(--font-khmer), sans-serif;
+}
+
+/* =========================================
+   RESPONSIVE LAYOUT
+========================================= */
+
 @media (max-width: 768px) {
   #root {
     width: 100%;
@@ -61,7 +113,10 @@ select {
   }
 }
 
-/* Small Mobile */
+/* =========================================
+   SMALL MOBILE
+========================================= */
+
 @media (max-width: 380px) {
   body {
     font-size: 13px;

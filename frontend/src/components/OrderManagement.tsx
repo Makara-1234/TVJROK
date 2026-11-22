@@ -1,5 +1,5 @@
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RefreshCw,
   Search,
@@ -19,20 +19,29 @@ import type {
   OrderStatusHistory,
 } from "../types/order";
 
-const formatMoney = (amount: number, currency = "USD") =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-  }).format(amount);
+const formatMoney = (amount: number, currency = "USD") => {
+  const code = currency?.toUpperCase() || "USD";
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: code,
+    }).format(Number.isFinite(amount) ? amount : 0);
+  } catch {
+    return `${code} ${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+};
 
-const formatDate = (date: string) =>
-  new Date(date).toLocaleString("en-US", {
+const formatDate = (date: string) => {
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleString("en-US", {
     year: "numeric",
     month: "short",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
   });
+};
 
 const statusStyle = (status: OrderStatus) => {
   switch (status) {
@@ -84,40 +93,55 @@ export default function OrderManagement() {
   const [history, setHistory] = useState<OrderStatusHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  const fetchOrders = async (showLoading = false) => {
-    try {
-      if (showLoading) setRefreshing(true);
+  // Prevent overlapping polling calls and state updates after unmount.
+  const mountedRef = useRef(false);
+  const fetchingRef = useRef(false);
+  const historyRequestRef = useRef(0);
 
-      setError(null);
+  const fetchOrders = useCallback(async (showLoading = false) => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+    if (showLoading && mountedRef.current) setRefreshing(true);
+    try {
       const data = await orderService.getAll();
-      setOrders(data);
+      if (!mountedRef.current) return;
+      setOrders(Array.isArray(data) ? data : []);
+      setError(null);
     } catch (err) {
       console.error("Failed to fetch orders:", err);
-      setError("Unable to load orders. Please check your API connection.");
+      if (mountedRef.current) {
+        setError("Unable to load orders. Please check your API connection.");
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      fetchingRef.current = false;
+      if (mountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchOrders();
-
+    mountedRef.current = true;
+    void fetchOrders();
     const intervalId = window.setInterval(() => {
-  fetchOrders();
-}, 10000);
-
-    return () => window.clearInterval(intervalId);
-  }, []);
+      if (!document.hidden && !fetchingRef.current) void fetchOrders();
+    }, 10000);
+    return () => {
+      mountedRef.current = false;
+      historyRequestRef.current += 1;
+      window.clearInterval(intervalId);
+    };
+  }, [fetchOrders]);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      const keyword = search.toLowerCase();
+      const keyword = search.trim().toLowerCase();
 
       const matchesSearch =
-        order.orderNumber.toLowerCase().includes(keyword) ||
-        order.customerName.toLowerCase().includes(keyword) ||
-        order.customerPhone.toLowerCase().includes(keyword);
+        (order.orderNumber ?? "").toLowerCase().includes(keyword) ||
+        (order.customerName ?? "").toLowerCase().includes(keyword) ||
+        (order.customerPhone ?? "").toLowerCase().includes(keyword);
 
       const matchesStatus =
         filter === "All" || order.status === filter;
@@ -144,6 +168,7 @@ export default function OrderManagement() {
 
   const closeModal = () => {
     if (actionLoading) return;
+    historyRequestRef.current += 1;
 
     setModalType(null);
     setSelectedOrder(null);
@@ -165,7 +190,7 @@ export default function OrderManagement() {
   };
 
   const handleUpdateStatus = async () => {
-    if (!selectedOrder) return;
+    if (!selectedOrder || !availableStatuses(selectedOrder.status).includes(newStatus)) return;
 
     try {
       setActionLoading(true);
@@ -193,6 +218,7 @@ export default function OrderManagement() {
   };
 
   const openHistory = async (order: Order) => {
+    const requestId = ++historyRequestRef.current;
     setSelectedOrder(order);
     setHistory([]);
     setHistoryLoading(true);
@@ -201,17 +227,17 @@ export default function OrderManagement() {
 
     try {
       const data = await orderService.getHistory(order.id);
-      setHistory(data);
+      if (mountedRef.current && requestId === historyRequestRef.current) setHistory(data);
     } catch (err) {
       console.error("Failed to load order history:", err);
-      setActionError("Unable to load order history.");
+      if (mountedRef.current && requestId === historyRequestRef.current) setActionError("Unable to load order history.");
     } finally {
-      setHistoryLoading(false);
+      if (mountedRef.current && requestId === historyRequestRef.current) setHistoryLoading(false);
     }
   };
 
   return (
-    <div className="space-y-6 p-5 md:p-8">
+    <div className="min-w-0 space-y-6 p-5 md:p-8">
       {/* Page Heading */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -225,7 +251,7 @@ export default function OrderManagement() {
 
         <button
           type="button"
-          onClick={() => fetchOrders(true)}
+          onClick={() => void fetchOrders(true)}
           disabled={refreshing}
           className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
         >
@@ -269,7 +295,7 @@ export default function OrderManagement() {
       </div>
 
       {/* Orders Table */}
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 p-5">
           <div>
             <h3 className="font-bold text-slate-900">All Orders</h3>
@@ -312,7 +338,7 @@ export default function OrderManagement() {
             {error}
             <button
               type="button"
-              onClick={() => fetchOrders(true)}
+              onClick={() => void fetchOrders(true)}
               className="ml-2 font-semibold underline"
             >
               Retry
@@ -366,7 +392,7 @@ export default function OrderManagement() {
                     </td>
 
                     <td className="px-5 py-4">
-                      {order.items.length} items
+                      {order.items?.length ?? 0} items
                     </td>
 
                     <td className="whitespace-nowrap px-5 py-4 font-semibold">
@@ -443,7 +469,7 @@ export default function OrderManagement() {
           <div
             role="dialog"
             aria-modal="true"
-            className="my-8 w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl"
+            className="my-8 max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl sm:p-6"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -474,7 +500,7 @@ export default function OrderManagement() {
             {/* Order Details */}
             {modalType === "details" && (
               <div className="mt-5 space-y-5">
-                <div className="grid grid-cols-2 gap-4 rounded-xl bg-slate-50 p-4">
+                <div className="grid grid-cols-1 gap-4 rounded-xl bg-slate-50 p-4 sm:grid-cols-2">
                   <div>
                     <p className="text-xs text-slate-400">Customer</p>
                     <p className="mt-1 text-sm font-semibold">
@@ -513,7 +539,7 @@ export default function OrderManagement() {
                   </h4>
 
                   <div className="overflow-hidden rounded-xl border border-slate-200">
-                    {selectedOrder.items.map((item, index) => (
+                    {(selectedOrder.items ?? []).map((item, index) => (
                       <div
                         key={`${item.productId}-${index}`}
                         className="flex items-center justify-between gap-3 border-b border-slate-100 p-4 last:border-0"

@@ -1,8 +1,10 @@
 
-
+import TableManagement from "./components/TableManagement";
+import SettingsManagement from "./components/SettingsManagement";
 import { useEffect, useState } from "react";
 import CustomersManagement from "./components/CustomersManagement";
-
+import { useNavigate } from "react-router-dom";
+import { authService } from "./services/authService";
 
 import {
 
@@ -40,8 +42,9 @@ import {
 
   Tags,
 
-} from "lucide-react";
+  Table2
 
+} from "lucide-react";
 
 
 import CategoryManagement from "./components/CategoryManagement";
@@ -65,20 +68,14 @@ import type { Payment } from "./types/payment";
 
 
 type PageName =
-
   | "Dashboard"
-
   | "Orders"
-
   | "Payments"
-
   | "Products"
-
   | "Categories"
-
-  | "Customers";
-
-
+  | "Tables"
+  | "Customers"
+  | "Settings";
 
 const formatMoney = (amount: number, currency = "USD") => {
 
@@ -953,8 +950,12 @@ function PaymentManagement({
 
 
 function App() {
+  const navigate = useNavigate();
 
-
+  const handleLogout = () => {
+    authService.logout();
+    navigate("/admin/login", { replace: true });
+  };
 
   // Active Page
 
@@ -1198,6 +1199,8 @@ useEffect(() => {
 
   { name: "Categories", icon: Tags },
 
+  { name: "Tables", icon: Table2 },
+
   { name: "Customers", icon: Users },
 
   ] as const;
@@ -1361,23 +1364,19 @@ useEffect(() => {
 
 
           <button
-
+            type="button"
             onClick={() => {
-
-              setActivePage("Dashboard");
-
+              setActivePage("Settings");
               setMobileMenuOpen(false);
-
             }}
-
-            className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm text-slate-500 hover:bg-slate-50"
-
+            className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition ${
+              activePage === "Settings"
+                ? "bg-orange-50 text-orange-600"
+                : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+            }`}
           >
-
             <Settings size={19} />
-
             Settings
-
           </button>
 
 
@@ -1510,21 +1509,25 @@ useEffect(() => {
 
 
 
-            <button className="relative rounded-xl border border-slate-200 p-2.5">
-
+            <button
+              type="button"
+              className="relative rounded-xl border border-slate-200 p-2.5"
+              aria-label="Notifications"
+            >
               <Bell size={19} />
 
-
-
               {pendingPayments.length > 0 && (
-
                 <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500" />
-
               )}
-
             </button>
 
-
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-xl bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-100"
+            >
+              Logout
+            </button>
 
           </div>
 
@@ -2056,13 +2059,15 @@ useEffect(() => {
 
   <ProductManagement />
 
-) : activePage === "Categories" ? (
-  <CategoryManagement />
-) : activePage === "Customers" ? (
-  <CustomersManagement />
-) : (
-
-
+ ) : activePage === "Categories" ? (
+          <CategoryManagement />
+        ) : activePage === "Tables" ? (
+          <TableManagement />
+        ) : activePage === "Customers" ? (
+          <CustomersManagement />
+        ) : activePage === "Settings" ? (
+          <SettingsManagement />
+        ) : (
 
           /* OTHER MODULES */
 

@@ -1,3 +1,5 @@
+import settingsService from "../services/settingsService";
+import type { RestaurantSettings } from "../services/settingsService";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import {
@@ -32,6 +34,8 @@ import { orderService } from "../services/orderService";
 import { productService } from "../services/productService";
 import { categoryService } from "../services/categoryService";
 import { tableService } from "../services/tableService";
+import { paymentService } from "../services/paymentService";
+import type { Payment, PaymentMethod } from "../types/payment";
 
 import type { Product } from "../types/product";
 import type { Category } from "../types/category";
@@ -89,10 +93,15 @@ function getProductImage(product: Product) {
 }
 
 export default function CustomerPage() {
+
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [restaurantSettings, setRestaurantSettings] =
+    useState<RestaurantSettings | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+
 
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedTableId, setSelectedTableId] = useState("");
@@ -110,6 +119,11 @@ export default function CustomerPage() {
   const [checkoutError, setCheckoutError] = useState("");
   const [submittingOrder, setSubmittingOrder] = useState(false);
   const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] =
+    useState<PaymentMethod>("KHQR");
+  const [createdPayment, setCreatedPayment] = useState<Payment | null>(null);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
 
   // Track an existing order without leaving the customer page.
   const [trackOpen, setTrackOpen] = useState(false);
@@ -118,6 +132,38 @@ export default function CustomerPage() {
   const [trackingLoading, setTrackingLoading] = useState(false);
   const [trackingRefreshing, setTrackingRefreshing] = useState(false);
   const [trackingError, setTrackingError] = useState("");
+
+  useEffect(() => {
+  let active = true;
+
+  const loadSettings = async () => {
+    try {
+      const data = await settingsService.getSettings();
+
+      if (active) {
+        setRestaurantSettings(data);
+      }
+    } catch (error) {
+      console.error("Failed to load restaurant settings:", error);
+    } finally {
+      if (active) {
+        setSettingsLoading(false);
+      }
+    }
+  };
+
+  void loadSettings();
+
+  const intervalId = window.setInterval(() => {
+    void loadSettings();
+  }, 30000);
+
+  return () => {
+    active = false;
+    window.clearInterval(intervalId);
+  };
+}, []);
+
 
   const fetchTrackedOrder = useCallback(async (number: string, silent = false) => {
     const value = number.trim();
@@ -286,6 +332,8 @@ export default function CustomerPage() {
   const selectedTable = tables.find((table) => table.id === selectedTableId);
 
   const addToCart = (product: Product) => {
+    if (!restaurantIsOpen) return;
+
     setCart((current) => {
       const existing = current.find((item) => item.product.id === product.id);
       if (existing) {
@@ -318,22 +366,33 @@ export default function CustomerPage() {
   };
 
   const openCheckout = () => {
-    if (cart.length === 0) return;
+    if (!restaurantIsOpen || cart.length === 0) return;
     setCheckoutError("");
     setCreatedOrder(null);
+    setCreatedPayment(null);
+    setReceiptFile(null);
+    setSelectedPaymentMethod("KHQR");
     setCheckoutOpen(true);
   };
 
   const closeCheckout = () => {
-    if (submittingOrder) return;
+    if (submittingOrder || uploadingReceipt) return;
+    if (createdOrder && !createdPayment) {
+      setCheckoutError("Order បានបង្កើតរួចហើយ។ សូមបន្តបង្កើត Payment មុនពេលបិទ Checkout។");
+      return;
+    }
     setCheckoutOpen(false);
     setCheckoutError("");
-    setCreatedOrder(null);
   };
 
   const handleCreateOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setCheckoutError("");
+
+    if (!restaurantIsOpen) {
+      setCheckoutError("សូមអភ័យទោស ភោជនីយដ្ឋានកំពុងបិទ មិនអាចទទួលការកម្មង់បានទេ។");
+      return;
+    }
 
     const trimmedName = customerName.trim();
     const trimmedPhone = customerPhone.trim();
@@ -348,42 +407,108 @@ export default function CustomerPage() {
       return;
     }
 
-    if (cart.length === 0) {
+    // A previously created order is reused if payment creation failed.
+    // This prevents creating duplicate orders when the customer retries.
+    if (!createdOrder && cart.length === 0) {
       setCheckoutError("កន្ត្រករបស់អ្នកមិនមានមុខម្ហូបទេ។");
       return;
     }
 
-    const payload: CreateOrderDto = {
-      tableId: selectedTable?.id ?? null,
-      customerName: trimmedName,
-      customerPhone: trimmedPhone,
-      notes: orderNotes.trim() || null,
-      items: cart.map((item) => ({
-        productId: item.product.id,
-        quantity: item.quantity,
-      })),
-    };
-
     try {
       setSubmittingOrder(true);
-      const order = await orderService.create(payload);
-      setCreatedOrder(order);
-      setCart([]);
-      setCartOpen(false);
+
+      let order = createdOrder;
+
+      if (!order) {
+        const payload: CreateOrderDto = {
+          tableId: selectedTable?.id ?? null,
+          customerName: trimmedName,
+          customerPhone: trimmedPhone,
+          notes: orderNotes.trim() || null,
+          items: cart.map((item) => ({
+            productId: item.product.id,
+            quantity: item.quantity,
+          })),
+        };
+
+        order = await orderService.create(payload);
+        setCreatedOrder(order);
+        setCart([]);
+        setCartOpen(false);
+      }
+
+      if (!createdPayment) {
+        try {
+          const payment = await paymentService.create({
+            orderId: order.id,
+            paymentMethod: selectedPaymentMethod,
+          });
+          setCreatedPayment(payment);
+        } catch (createPaymentError) {
+          // The server may have created the payment even if the response was lost.
+          // Check by Order ID before allowing another create attempt.
+          try {
+            const existingPayment = await paymentService.getByOrderId(order.id);
+            setCreatedPayment(existingPayment);
+          } catch {
+            throw createPaymentError;
+          }
+        }
+      }
     } catch (err: unknown) {
-      console.error("Failed to create order:", err);
+      console.error("Failed to create order/payment:", err);
 
       if (axios.isAxiosError(err)) {
         const message =
           err.response?.data?.message ||
           err.response?.data?.title ||
-          "មិនអាចបញ្ជូនការកម្មង់បានទេ។ សូមព្យាយាមម្ដងទៀត។";
+          "មិនអាចបង្កើតការកម្មង់ ឬ Payment បានទេ។ សូមពិនិត្យឡើងវិញ ហើយសាកល្បងម្ដងទៀត។";
         setCheckoutError(String(message));
       } else {
         setCheckoutError("មានបញ្ហាកើតឡើង។ សូមព្យាយាមម្ដងទៀត។");
       }
     } finally {
       setSubmittingOrder(false);
+    }
+  };
+
+  const handleUploadReceipt = async () => {
+    if (!createdPayment || !receiptFile) {
+      setCheckoutError("សូមជ្រើសរើសរូបភាពបង្កាន់ដៃជាមុនសិន។");
+      return;
+    }
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowedTypes.includes(receiptFile.type)) {
+      setCheckoutError("អាច Upload បានតែរូប JPG, PNG ឬ WEBP ប៉ុណ្ណោះ។");
+      return;
+    }
+
+    if (receiptFile.size > 5 * 1024 * 1024) {
+      setCheckoutError("ទំហំរូបភាពមិនអាចលើសពី 5MB បានទេ។");
+      return;
+    }
+
+    try {
+      setUploadingReceipt(true);
+      setCheckoutError("");
+      const updatedPayment = await paymentService.uploadReceipt(
+        createdPayment.id,
+        receiptFile
+      );
+      setCreatedPayment(updatedPayment);
+      setReceiptFile(null);
+    } catch (err: unknown) {
+      console.error("Failed to upload payment receipt:", err);
+      const message =
+        axios.isAxiosError(err)
+          ? err.response?.data?.message ||
+            err.response?.data?.title ||
+            "មិនអាច Upload បង្កាន់ដៃបានទេ។ សូមព្យាយាមម្ដងទៀត។"
+          : "មានបញ្ហាកើតឡើងពេល Upload បង្កាន់ដៃ។";
+      setCheckoutError(String(message));
+    } finally {
+      setUploadingReceipt(false);
     }
   };
 
@@ -396,6 +521,11 @@ export default function CustomerPage() {
   const scrollToMenu = () =>
     document.getElementById("food-menu")?.scrollIntoView({ behavior: "smooth" });
 
+  const restaurantName = restaurantSettings?.restaurantName?.trim() || "TV JROK";
+  const restaurantIsOpen = restaurantSettings?.isOpen ?? true;
+  const openingTime = restaurantSettings?.openingTime || "08:00";
+  const closingTime = restaurantSettings?.closingTime || "22:00";
+
   return (
     <div
       className="min-h-screen overflow-x-hidden"
@@ -407,16 +537,24 @@ export default function CustomerPage() {
         style={{ background: COLORS.brown }}
       >
         <div className="mx-auto flex min-h-[74px] max-w-[1440px] flex-wrap items-center justify-between gap-3 px-3 py-3 sm:flex-nowrap sm:px-6 lg:px-8">
-          <a href="#top" className="flex shrink-0 items-center gap-3" aria-label="TV JROK home">
+          <a href="#top" className="flex shrink-0 items-center gap-3" aria-label={`${restaurantName} home`}>
             <span
-              className="flex h-11 w-11 items-center justify-center rounded-2xl text-white shadow-md sm:h-12 sm:w-12"
+              className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl text-white shadow-md sm:h-12 sm:w-12"
               style={{ background: COLORS.orange }}
             >
-              <ChefHat size={27} strokeWidth={2.3} />
+              {restaurantSettings?.logoUrl ? (
+                <img
+                  src={restaurantSettings.logoUrl}
+                  alt={`${restaurantName} logo`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <ChefHat size={27} strokeWidth={2.3} />
+              )}
             </span>
             <span>
               <span className="brand block text-xl leading-none tracking-tight sm:text-2xl" style={{ color: "#FF9A45" }}>
-                TV JROK
+                {restaurantName}
               </span>
               <span lang="en" className="mt-1 block text-[9px] font-semibold tracking-[0.16em] text-[#c9bdb1] sm:text-[10px]">
                 FOOD · DRINKS · GOOD VIBES
@@ -464,6 +602,23 @@ export default function CustomerPage() {
         </div>
       </header>
 
+      {!settingsLoading && (
+        <div
+          className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 px-4 py-2.5 text-xs font-bold"
+          style={{
+            background: restaurantIsOpen ? "#EAF7EF" : "#FDECEC",
+            color: restaurantIsOpen ? COLORS.success : COLORS.error,
+          }}
+        >
+          <span>
+            {restaurantIsOpen ? "● OPEN NOW" : "● CLOSED"}
+          </span>
+          <span className="font-medium" style={{ color: COLORS.text }}>
+            Business Hours: {openingTime} – {closingTime}
+          </span>
+        </div>
+      )}
+
       <div className="flex min-h-[calc(100vh-74px)]">
         {/* Customer navigation sidebar: stays below the main header. */}
         <aside className="sticky top-[74px] flex h-[calc(100vh-74px)] w-[62px] shrink-0 flex-col items-center gap-3 border-r border-[#EAE4DC] bg-white px-2 py-4 sm:w-[76px] sm:gap-4 sm:py-5">
@@ -490,7 +645,7 @@ export default function CustomerPage() {
           <div className="pointer-events-none absolute right-[8%] top-[-90px] h-[310px] w-[310px] rounded-full border border-[#d27b42]/15" />
           <div className="relative z-10 flex min-h-[300px] items-center px-6 py-10 sm:min-h-[320px] sm:px-10 lg:min-h-[340px] lg:px-14">
             <div className="max-w-2xl">
-              <p className="text-[10px] font-black uppercase tracking-[0.22em]" style={{ color: "#FF8A43" }}>WELCOME TO TV JROK</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.22em]" style={{ color: "#FF8A43" }}>WELCOME TO {restaurantName.toUpperCase()}</p>
               <h1 lang="km" className="!mt-4 text-2xl font-bold leading-[1.7] tracking-normal !text-white sm:text-4xl sm:leading-[1.5] lg:text-5xl">
                 បរិយាកាស កក់ក្ដៅ
                 <br className="hidden sm:block" /> រសជាតិពិសេស
@@ -511,7 +666,7 @@ export default function CustomerPage() {
             <div className="absolute right-[7%] top-1/2 hidden h-40 w-40 -translate-y-1/2 rotate-6 items-center justify-center rounded-full border border-[#d18a53]/60 bg-[#21150f]/70 text-center shadow-2xl md:flex lg:right-[10%] lg:h-44 lg:w-44">
               <div>
                 <UtensilsCrossed className="mx-auto mb-3" size={34} style={{ color: "#F59A4A" }} />
-                <p className="text-xl font-black tracking-tight" style={{ color: "#F59A4A" }}>TV JROK</p>
+                <p className="text-xl font-black tracking-tight" style={{ color: "#F59A4A" }}>{restaurantName}</p>
                 <p className="mt-2 text-[9px] font-bold tracking-[0.24em] text-[#e6c9ad]">CHILL AREA</p>
               </div>
             </div>
@@ -550,7 +705,7 @@ export default function CustomerPage() {
                         <h3 className="line-clamp-2 text-xs font-bold leading-relaxed">{product.name}</h3>
                         <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-[#93877b]">{product.categoryName || "TV JROK Special"}</p>
                         <p className="mt-1.5 text-base font-black" style={{ color: COLORS.darkOrange }}>{formatPrice(product.price)}</p>
-                        <button type="button" onClick={() => addToCart(product)} className="mt-1 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[10px] font-extrabold text-white transition hover:brightness-95" style={{ background: "#BD4A20" }}>
+                        <button type="button" onClick={() => addToCart(product)} disabled={!restaurantIsOpen} className="mt-1 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[10px] font-extrabold text-white transition hover:brightness-95" style={{ background: "#BD4A20" }}>
                           <Plus size={12} /> បន្ថែម
                         </button>
                       </div>
@@ -675,6 +830,7 @@ export default function CustomerPage() {
                         <button
                           type="button"
                           onClick={() => addToCart(product)}
+                          disabled={!restaurantIsOpen}
                           aria-label={`Add ${product.name} to cart`}
                           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition hover:scale-105 hover:brightness-95 active:scale-95 sm:h-9 sm:w-9"
                           style={{ background: COLORS.orange }}
@@ -692,10 +848,16 @@ export default function CustomerPage() {
         <footer className="mt-12 rounded-2xl px-6 py-8 text-center text-white" style={{ background: COLORS.brown }}>
           <div className="flex items-center justify-center gap-2">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: COLORS.orange }}><ChefHat size={20} /></span>
-            <span className="brand text-xl tracking-wide" style={{ color: "#FF9A45" }}>TV JROK</span>
+            <span className="brand text-xl tracking-wide" style={{ color: "#FF9A45" }}>{restaurantName}</span>
           </div>
           <p className="mt-2 text-[10px] font-semibold tracking-[0.18em] text-[#b9aaa0]">FOOD · DRINKS · GOOD VIBES</p>
-          <p className="mt-4 text-[10px] text-[#8f8178]">© {new Date().getFullYear()} TV JROK. All rights reserved.</p>
+          {restaurantSettings?.phoneNumber && (
+            <p className="mt-3 text-xs text-[#d8c9bd]">Phone: {restaurantSettings.phoneNumber}</p>
+          )}
+          {restaurantSettings?.address && (
+            <p className="mt-1 text-xs text-[#d8c9bd]">{restaurantSettings.address}</p>
+          )}
+          <p className="mt-4 text-[10px] text-[#8f8178]">© {new Date().getFullYear()} {restaurantName}. All rights reserved.</p>
         </footer>
       </main>
       </div>
@@ -1159,7 +1321,7 @@ export default function CustomerPage() {
             aria-labelledby="checkout-title"
             className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-[26px] bg-white shadow-2xl"
           >
-            {createdOrder ? (
+            {createdOrder && createdPayment ? (
               <div className="px-6 py-8 text-center sm:px-9 sm:py-10">
                 <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full" style={{ background: "#EAF7EF", color: COLORS.success }}>
                   <ClipboardCheck size={38} />
@@ -1193,6 +1355,71 @@ export default function CustomerPage() {
                   </div>
                 </div>
 
+                <div className="mt-4 rounded-2xl border p-4 text-left" style={{ borderColor: COLORS.border }}>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-bold" style={{ color: COLORS.text }}>វិធីបង់ប្រាក់</span>
+                    <span className="rounded-full px-3 py-1 text-xs font-bold" style={{ background: COLORS.lightOrange, color: COLORS.darkOrange }}>
+                      {createdPayment.paymentMethod}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <span className="text-sm" style={{ color: COLORS.muted }}>Payment Status</span>
+                    <span className="text-sm font-bold" style={{ color: createdPayment.status === "Verified" ? COLORS.success : COLORS.warning }}>
+                      {createdPayment.status}
+                    </span>
+                  </div>
+
+                  {createdPayment.paymentMethod === "KHQR" ? (
+                    <div className="mt-4 rounded-xl border border-dashed p-4 text-center" style={{ borderColor: COLORS.orange, background: COLORS.lightOrange }}>
+                      <p className="text-sm font-extrabold" style={{ color: COLORS.darkOrange }}>KHQR Payment</p>
+                      <p className="mt-1 text-xs leading-5" style={{ color: COLORS.muted }}>
+                        QR Code របស់ហាងមិនទាន់បាន Upload ទេ។ សូមទាក់ទងបុគ្គលិក ឬបង់ប្រាក់នៅ Counter ជាបណ្ដោះអាសន្ន។
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-3 rounded-xl p-3 text-xs leading-5" style={{ background: COLORS.background, color: COLORS.muted }}>
+                      សូមបង់ប្រាក់នៅ Counter។ បុគ្គលិកនឹងពិនិត្យ និងបញ្ជាក់ការទូទាត់របស់អ្នក។
+                    </p>
+                  )}
+
+                  {createdPayment.paymentMethod === "KHQR" && (
+                    <div className="mt-4">
+                      {createdPayment.receiptImageUrl ? (
+                        <div className="rounded-xl p-3" style={{ background: "#EAF7EF" }}>
+                          <p className="text-sm font-bold" style={{ color: COLORS.success }}>បាន Upload បង្កាន់ដៃរួចរាល់</p>
+                          <a href={createdPayment.receiptImageUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-bold underline" style={{ color: COLORS.darkOrange }}>
+                            មើលរូបបង្កាន់ដៃ
+                          </a>
+                        </div>
+                      ) : (
+                        <>
+                          <label htmlFor="payment-receipt" className="mb-1.5 block text-sm font-bold" style={{ color: COLORS.text }}>
+                            Upload បង្កាន់ដៃ (JPG, PNG, WEBP · Max 5MB)
+                          </label>
+                          <input
+                            id="payment-receipt"
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={(event) => setReceiptFile(event.target.files?.[0] ?? null)}
+                            className="block w-full rounded-xl border p-2 text-xs"
+                            style={{ borderColor: COLORS.border }}
+                            disabled={uploadingReceipt}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void handleUploadReceipt()}
+                            disabled={!receiptFile || uploadingReceipt}
+                            className="mt-2 w-full rounded-xl py-3 text-sm font-extrabold text-white disabled:opacity-50"
+                            style={{ background: COLORS.orange }}
+                          >
+                            {uploadingReceipt ? "កំពុង Upload..." : "បញ្ជូនបង្កាន់ដៃ"}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -1215,6 +1442,8 @@ export default function CustomerPage() {
                   onClick={() => {
                     setCheckoutOpen(false);
                     setCreatedOrder(null);
+                    setCreatedPayment(null);
+                    setReceiptFile(null);
                     setCustomerName("");
                     setCustomerPhone("");
                     setOrderNotes("");
@@ -1236,13 +1465,13 @@ export default function CustomerPage() {
                       បញ្ជាក់ការកម្មង់
                     </h2>
                     <p className="mt-1 text-xs" style={{ color: COLORS.muted }}>
-                      សូមបំពេញព័ត៌មានមុនពេលបញ្ជូន Order
+                      {createdOrder ? "Order បានបង្កើតរួចហើយ។ សូមសាកល្បងបង្កើត Payment ម្ដងទៀត។" : "សូមបំពេញព័ត៌មានមុនពេលបញ្ជូន Order"}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={closeCheckout}
-                    disabled={submittingOrder}
+                    disabled={submittingOrder || uploadingReceipt || (!!createdOrder && !createdPayment)}
                     aria-label="Close checkout"
                     className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F7F5F1] transition hover:bg-[#F0E8E0] disabled:opacity-50"
                     style={{ color: COLORS.text }}
@@ -1263,8 +1492,8 @@ export default function CustomerPage() {
                       <Table2 size={22} style={{ color: COLORS.orange }} />
                     </div>
                     <div className="mt-3 flex items-center justify-between border-t pt-3" style={{ borderColor: COLORS.border }}>
-                      <span className="text-xs" style={{ color: COLORS.muted }}>{cartCount} items</span>
-                      <span className="text-lg font-black" style={{ color: COLORS.darkOrange }}>{formatPrice(cartTotal)}</span>
+                      <span className="text-xs" style={{ color: COLORS.muted }}>{createdOrder ? `${createdOrder.items?.length ?? 0} items` : `${cartCount} items`}</span>
+                      <span className="text-lg font-black" style={{ color: COLORS.darkOrange }}>{formatPrice(createdOrder?.totalAmount ?? cartTotal)}</span>
                     </div>
                   </div>
 
@@ -1282,7 +1511,7 @@ export default function CustomerPage() {
                         autoComplete="name"
                         maxLength={120}
                         required
-                        disabled={submittingOrder}
+                        disabled={submittingOrder || !!createdOrder}
                         className="w-full bg-transparent text-sm outline-none placeholder:text-[#aaa198]"
                       />
                     </div>
@@ -1303,7 +1532,7 @@ export default function CustomerPage() {
                         autoComplete="tel"
                         maxLength={30}
                         required
-                        disabled={submittingOrder}
+                        disabled={submittingOrder || !!createdOrder}
                         className="w-full bg-transparent text-sm outline-none placeholder:text-[#aaa198]"
                       />
                     </div>
@@ -1322,11 +1551,53 @@ export default function CustomerPage() {
                         placeholder="ឧ. មិនដាក់ហឹរ..."
                         rows={3}
                         maxLength={500}
-                        disabled={submittingOrder}
+                        disabled={submittingOrder || !!createdOrder}
                         className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-[#aaa198]"
                       />
                     </div>
                   </div>
+
+                  <div>
+                    <p className="mb-2 block text-sm font-bold" style={{ color: COLORS.text }}>
+                      ជ្រើសរើសវិធីបង់ប្រាក់ <span style={{ color: COLORS.error }}>*</span>
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPaymentMethod("KHQR")}
+                        disabled={submittingOrder || !!createdOrder}
+                        aria-pressed={selectedPaymentMethod === "KHQR"}
+                        className="rounded-xl border-2 p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-70"
+                        style={{
+                          borderColor: selectedPaymentMethod === "KHQR" ? COLORS.orange : COLORS.border,
+                          background: selectedPaymentMethod === "KHQR" ? COLORS.lightOrange : "#FFFFFF",
+                        }}
+                      >
+                        <span className="block text-sm font-extrabold" style={{ color: COLORS.text }}>KHQR</span>
+                        <span className="mt-1 block text-[10px]" style={{ color: COLORS.muted }}>Scan QR / Mobile Banking</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPaymentMethod("Cash")}
+                        disabled={submittingOrder || !!createdOrder}
+                        aria-pressed={selectedPaymentMethod === "Cash"}
+                        className="rounded-xl border-2 p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-70"
+                        style={{
+                          borderColor: selectedPaymentMethod === "Cash" ? COLORS.orange : COLORS.border,
+                          background: selectedPaymentMethod === "Cash" ? COLORS.lightOrange : "#FFFFFF",
+                        }}
+                      >
+                        <span className="block text-sm font-extrabold" style={{ color: COLORS.text }}>Cash</span>
+                        <span className="mt-1 block text-[10px]" style={{ color: COLORS.muted }}>បង់ប្រាក់នៅ Counter</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {createdOrder && !createdPayment && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
+                      Order #{createdOrder.orderNumber} បានបង្កើតរួចហើយ។ ការបង្កើត Payment មិនទាន់ជោគជ័យទេ។ ចុចប៊ូតុងខាងក្រោមម្ដងទៀត ដើម្បីបន្ត ដោយមិនបង្កើត Order ស្ទួន។
+                    </div>
+                  )}
 
                   {checkoutError && (
                     <div role="alert" className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm leading-6" style={{ color: COLORS.error }}>
@@ -1336,7 +1607,7 @@ export default function CustomerPage() {
 
                   <button
                     type="submit"
-                    disabled={submittingOrder || cart.length === 0}
+                    disabled={submittingOrder || (!createdOrder && cart.length === 0)}
                     className="flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-extrabold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
                     style={{ background: COLORS.orange }}
                   >
@@ -1347,7 +1618,7 @@ export default function CustomerPage() {
                       </>
                     ) : (
                       <>
-                        បញ្ជាក់ការកម្មង់ <ArrowRight size={17} />
+                        {createdOrder ? "បន្តបង្កើត Payment" : "បញ្ជាក់ការកម្មង់"} <ArrowRight size={17} />
                       </>
                     )}
                   </button>
