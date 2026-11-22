@@ -18,4 +18,6 @@ public class RestaurantSetting : BaseEntity
     public string ClosingTime { get; set; } = "22:00";
 
     public bool IsOpen { get; set; } = true;
+
+    public string? KhqrImageUrl { get; set; }
 }

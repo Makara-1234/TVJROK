@@ -10,4 +10,8 @@ public interface IRestaurantSettingService
     Task<RestaurantSettingResponseDto> UpdateAsync(
         UpdateRestaurantSettingDto dto
     );
+
+    Task<RestaurantSettingResponseDto> UpdateKhqrImageUrlAsync(
+    string imageUrl
+    );
 }

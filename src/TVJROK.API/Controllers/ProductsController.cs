@@ -1,5 +1,8 @@
 
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
 using TVJROK.Application.Features.Products.DTOs;
 using TVJROK.Application.Features.Products.Interfaces;
 
@@ -16,32 +19,64 @@ public class ProductsController : ControllerBase
         _productService = productService;
     }
 
+    // =====================================
+    // PUBLIC: Get All Products
+    // =====================================
+
+    [AllowAnonymous]
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
         var products = await _productService.GetAllAsync();
+
         return Ok(products);
     }
 
+    // =====================================
+    // PUBLIC: Get Product By ID
+    // =====================================
+
+    [AllowAnonymous]
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
         var product = await _productService.GetByIdAsync(id);
 
         if (product == null)
-            return NotFound(new { message = "Product not found." });
+        {
+            return NotFound(new
+            {
+                message = "Product not found."
+            });
+        }
 
         return Ok(product);
     }
 
+    // =====================================
+    // ADMIN: Create Product
+    // =====================================
+
+    [Authorize(Roles = "Admin")]
     [HttpPost]
-    public async Task<IActionResult> Create(CreateProductDto dto)
+    public async Task<IActionResult> Create(
+        [FromBody] CreateProductDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name))
-            return BadRequest(new { message = "Product name is required." });
+        {
+            return BadRequest(new
+            {
+                message = "Product name is required."
+            });
+        }
 
         if (dto.Price <= 0)
-            return BadRequest(new { message = "Price must be greater than zero." });
+        {
+            return BadRequest(new
+            {
+                message = "Price must be greater than zero."
+            });
+        }
 
         try
         {
@@ -55,36 +90,67 @@ public class ProductsController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new
+            {
+                message = ex.Message
+            });
         }
     }
 
+    // =====================================
+    // ADMIN: Update Product
+    // =====================================
+
+    [Authorize(Roles = "Admin")]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(
         Guid id,
-        UpdateProductDto dto)
+        [FromBody] UpdateProductDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name))
-            return BadRequest(new { message = "Product name is required." });
+        {
+            return BadRequest(new
+            {
+                message = "Product name is required."
+            });
+        }
 
         if (dto.Price <= 0)
-            return BadRequest(new { message = "Price must be greater than zero." });
+        {
+            return BadRequest(new
+            {
+                message = "Price must be greater than zero."
+            });
+        }
 
         try
         {
             var updated = await _productService.UpdateAsync(id, dto);
 
             if (!updated)
-                return NotFound(new { message = "Product not found." });
+            {
+                return NotFound(new
+                {
+                    message = "Product not found."
+                });
+            }
 
             return NoContent();
         }
         catch (InvalidOperationException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new
+            {
+                message = ex.Message
+            });
         }
     }
 
+    // =====================================
+    // ADMIN: Delete Product
+    // =====================================
+
+    [Authorize(Roles = "Admin")]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
@@ -93,11 +159,16 @@ public class ProductsController : ControllerBase
             var deleted = await _productService.DeleteAsync(id);
 
             if (!deleted)
-                return NotFound(new { message = "Product not found." });
+            {
+                return NotFound(new
+                {
+                    message = "Product not found."
+                });
+            }
 
             return NoContent();
         }
-        catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+        catch (DbUpdateException)
         {
             return Conflict(new
             {
@@ -106,7 +177,11 @@ public class ProductsController : ControllerBase
         }
     }
 
-    
+    // =====================================
+    // PUBLIC: Get Paged Products
+    // =====================================
+
+    [AllowAnonymous]
     [HttpGet("paged")]
     public async Task<IActionResult> GetPaged(
         [FromQuery] ProductQueryDto query)
@@ -115,5 +190,4 @@ public class ProductsController : ControllerBase
 
         return Ok(result);
     }
-
 }

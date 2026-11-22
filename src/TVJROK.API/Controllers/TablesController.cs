@@ -1,5 +1,7 @@
 
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+
 using TVJROK.Application.Features.Tables.DTOs;
 using TVJROK.Application.Features.Tables.Interfaces;
 
@@ -16,29 +18,51 @@ public class TablesController : ControllerBase
         _tableService = tableService;
     }
 
+    // =====================================
+    // PUBLIC: Get All Tables
     // GET: api/tables
+    // =====================================
+
+    [AllowAnonymous]
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
         var tables = await _tableService.GetAllAsync();
+
         return Ok(tables);
     }
 
+    // =====================================
+    // PUBLIC: Get Table By ID
     // GET: api/tables/{id}
+    // =====================================
+
+    [AllowAnonymous]
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
         var table = await _tableService.GetByIdAsync(id);
 
         if (table == null)
-            return NotFound(new { message = "Table not found." });
+        {
+            return NotFound(new
+            {
+                message = "Table not found."
+            });
+        }
 
         return Ok(table);
     }
 
+    // =====================================
+    // ADMIN: Create Table
     // POST: api/tables
+    // =====================================
+
+    [Authorize(Roles = "Admin")]
     [HttpPost]
-    public async Task<IActionResult> Create(CreateTableDto dto)
+    public async Task<IActionResult> Create(
+        [FromBody] CreateTableDto dto)
     {
         try
         {
@@ -52,43 +76,81 @@ public class TablesController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new
+            {
+                message = ex.Message
+            });
         }
     }
 
+    // =====================================
+    // ADMIN: Update Table
     // PUT: api/tables/{id}
+    // =====================================
+
+    [Authorize(Roles = "Admin")]
     [HttpPut("{id:guid}")]
-    public async Task<IActionResult> Update(Guid id, UpdateTableDto dto)
+    public async Task<IActionResult> Update(
+        Guid id,
+        [FromBody] UpdateTableDto dto)
     {
         try
         {
             var updated = await _tableService.UpdateAsync(id, dto);
 
             if (!updated)
-                return NotFound(new { message = "Table not found." });
+            {
+                return NotFound(new
+                {
+                    message = "Table not found."
+                });
+            }
 
-            return Ok(new { message = "Table updated successfully." });
+            return Ok(new
+            {
+                message = "Table updated successfully."
+            });
         }
         catch (InvalidOperationException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new
+            {
+                message = ex.Message
+            });
         }
     }
 
+    // =====================================
+    // ADMIN: Deactivate Table
     // DELETE: api/tables/{id}
+    // =====================================
+
+    [Authorize(Roles = "Admin")]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Deactivate(Guid id)
     {
         var deactivated = await _tableService.DeactivateAsync(id);
 
         if (!deactivated)
-            return NotFound(new { message = "Table not found." });
+        {
+            return NotFound(new
+            {
+                message = "Table not found."
+            });
+        }
 
-        return Ok(new { message = "Table deactivated successfully." });
+        return Ok(new
+        {
+            message = "Table deactivated successfully."
+        });
     }
 
-    
+    // =====================================
+    // PUBLIC: Get Table Availability
     // GET: api/tables/availability
+    // =====================================
+
+    [AllowAnonymous]
     [HttpGet("availability")]
     public async Task<IActionResult> GetAvailability()
     {
@@ -96,5 +158,4 @@ public class TablesController : ControllerBase
 
         return Ok(tables);
     }
-
 }

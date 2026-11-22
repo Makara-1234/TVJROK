@@ -1,5 +1,7 @@
 
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+
 using TVJROK.Application.Features.Orders.DTOs;
 using TVJROK.Application.Features.Orders.Interfaces;
 
@@ -16,41 +18,83 @@ public class OrdersController : ControllerBase
         _orderService = orderService;
     }
 
+    // =====================================
+    // ADMIN: Get All Orders
     // GET: api/orders
+    // =====================================
+
+    [Authorize(Roles = "Admin")]
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
         var orders = await _orderService.GetAllAsync();
+
         return Ok(orders);
     }
 
+    // =====================================
+    // ADMIN: Get Order By ID
     // GET: api/orders/{id}
+    // =====================================
+
+    [Authorize(Roles = "Admin")]
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
         var order = await _orderService.GetByIdAsync(id);
 
         if (order == null)
-            return NotFound(new { message = "Order not found." });
+        {
+            return NotFound(new
+            {
+                message = "Order not found."
+            });
+        }
 
         return Ok(order);
     }
 
+    // =====================================
+    // PUBLIC: Track Order By Order Number
     // GET: api/orders/number/{orderNumber}
+    // =====================================
+
+    [AllowAnonymous]
     [HttpGet("number/{orderNumber}")]
-    public async Task<IActionResult> GetByOrderNumber(string orderNumber)
+    public async Task<IActionResult> GetByOrderNumber(
+        string orderNumber)
     {
-        var order = await _orderService.GetByOrderNumberAsync(orderNumber);
+        if (string.IsNullOrWhiteSpace(orderNumber))
+        {
+            return BadRequest(new
+            {
+                message = "Order number is required."
+            });
+        }
+
+        var order = await _orderService
+            .GetByOrderNumberAsync(orderNumber);
 
         if (order == null)
-            return NotFound(new { message = "Order not found." });
+        {
+            return NotFound(new
+            {
+                message = "Order not found."
+            });
+        }
 
         return Ok(order);
     }
 
+    // =====================================
+    // PUBLIC: Customer Create Order
     // POST: api/orders
+    // =====================================
+
+    [AllowAnonymous]
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateOrderDto dto)
+    public async Task<IActionResult> Create(
+        [FromBody] CreateOrderDto dto)
     {
         try
         {
@@ -64,22 +108,63 @@ public class OrdersController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new
+            {
+                message = ex.Message
+            });
         }
     }
 
-    
-        // PUT: api/orders/{id}/status
-            [HttpPut("{id:guid}/status")]
-        public async Task<IActionResult> UpdateStatus(
-         Guid id,
-            [FromBody] UpdateOrderStatusDto dto)
-{
-    try
-    {
-        var result = await _orderService.UpdateStatusAsync(id, dto);
+    // =====================================
+    // ADMIN: Update Order Status
+    // PUT: api/orders/{id}/status
+    // =====================================
 
-        if (!result)
+    [Authorize(Roles = "Admin")]
+    [HttpPut("{id:guid}/status")]
+    public async Task<IActionResult> UpdateStatus(
+        Guid id,
+        [FromBody] UpdateOrderStatusDto dto)
+    {
+        try
+        {
+            var result = await _orderService
+                .UpdateStatusAsync(id, dto);
+
+            if (!result)
+            {
+                return NotFound(new
+                {
+                    message = "Order not found."
+                });
+            }
+
+            return Ok(new
+            {
+                message = "Order status updated successfully."
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    }
+
+    // =====================================
+    // ADMIN: Get Order Status History
+    // GET: api/orders/{id}/history
+    // =====================================
+
+    [Authorize(Roles = "Admin")]
+    [HttpGet("{id:guid}/history")]
+    public async Task<IActionResult> GetOrderStatusHistory(Guid id)
+    {
+        var order = await _orderService.GetByIdAsync(id);
+
+        if (order == null)
         {
             return NotFound(new
             {
@@ -87,32 +172,9 @@ public class OrdersController : ControllerBase
             });
         }
 
-        return Ok(new
-        {
-            message = "Order status updated successfully."
-        });
+        var history = await _orderService
+            .GetOrderStatusHistoryAsync(id);
+
+        return Ok(history);
     }
-    catch (InvalidOperationException ex)
-    {
-        return BadRequest(new
-        {
-            message = ex.Message
-        });
-    }
-}
-
-// GET: api/orders/{id}/history
-[HttpGet("{id:guid}/history")]
-public async Task<IActionResult> GetOrderStatusHistory(Guid id)
-{
-    var order = await _orderService.GetByIdAsync(id);
-
-    if (order == null)
-        return NotFound(new { message = "Order not found." });
-
-    var history = await _orderService.GetOrderStatusHistoryAsync(id);
-
-    return Ok(history);
-}
-
 }

@@ -16,6 +16,7 @@ public class RestaurantSettingService : IRestaurantSettingService
         _context = context;
     }
 
+    // Get restaurant settings
     public async Task<RestaurantSettingResponseDto> GetAsync()
     {
         var setting = await _context.RestaurantSettings
@@ -32,6 +33,7 @@ public class RestaurantSettingService : IRestaurantSettingService
         return MapToResponse(setting);
     }
 
+    // Update restaurant settings
     public async Task<RestaurantSettingResponseDto> UpdateAsync(
         UpdateRestaurantSettingDto dto)
     {
@@ -48,6 +50,7 @@ public class RestaurantSettingService : IRestaurantSettingService
         setting.PhoneNumber = dto.PhoneNumber.Trim();
         setting.Address = dto.Address.Trim();
         setting.LogoUrl = dto.LogoUrl;
+        setting.KhqrImageUrl = dto.KhqrImageUrl;
         setting.CurrencyCode = dto.CurrencyCode.Trim().ToUpperInvariant();
         setting.OpeningTime = dto.OpeningTime;
         setting.ClosingTime = dto.ClosingTime;
@@ -59,6 +62,28 @@ public class RestaurantSettingService : IRestaurantSettingService
         return MapToResponse(setting);
     }
 
+    // Update KHQR image URL only
+    public async Task<RestaurantSettingResponseDto> UpdateKhqrImageUrlAsync(
+        string imageUrl)
+    {
+        var setting = await _context.RestaurantSettings
+            .FirstOrDefaultAsync();
+
+        if (setting == null)
+        {
+            setting = new RestaurantSetting();
+            _context.RestaurantSettings.Add(setting);
+        }
+
+        setting.KhqrImageUrl = imageUrl;
+        setting.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        return MapToResponse(setting);
+    }
+
+    // Map entity to response DTO
     private static RestaurantSettingResponseDto MapToResponse(
         RestaurantSetting setting)
     {
@@ -69,6 +94,7 @@ public class RestaurantSettingService : IRestaurantSettingService
             PhoneNumber = setting.PhoneNumber,
             Address = setting.Address,
             LogoUrl = setting.LogoUrl,
+            KhqrImageUrl = setting.KhqrImageUrl,
             CurrencyCode = setting.CurrencyCode,
             OpeningTime = setting.OpeningTime,
             ClosingTime = setting.ClosingTime,

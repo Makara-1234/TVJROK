@@ -18,4 +18,6 @@ public class UpdateRestaurantSettingDto
     public string ClosingTime { get; set; } = "22:00";
 
     public bool IsOpen { get; set; }
+
+    public string? KhqrImageUrl { get; set; }
 }

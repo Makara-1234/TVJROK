@@ -1,20 +1,66 @@
-using Npgsql;
+
+using System.Security.Claims;
+using System.Text;
+using System.Text.Json.Serialization;
+
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
+
+using Npgsql;
+
+using TVJROK.API.Services;
+using TVJROK.API.Swagger;
+
+using TVJROK.Domain.Entities;
 using TVJROK.Infrastructure.Persistence;
-using TVJROK.Application.Features.Categories.Interfaces;
 using TVJROK.Infrastructure.Services;
+
+using TVJROK.Application.Features.Auth.Interfaces;
+using TVJROK.Application.Features.Categories.Interfaces;
 using TVJROK.Application.Features.Products.Interfaces;
 using TVJROK.Application.Features.Orders.Interfaces;
 using TVJROK.Application.Features.Tables.Interfaces;
 using TVJROK.Application.Features.Payments;
 using TVJROK.Application.Features.Settings.Interfaces;
 
-
 var builder = WebApplication.CreateBuilder(args);
 
+// =====================================
+// JWT Configuration
+// =====================================
 
+var jwtKey = builder.Configuration["Jwt:Key"];
+var jwtIssuer = builder.Configuration["Jwt:Issuer"];
+var jwtAudience = builder.Configuration["Jwt:Audience"];
 
- // Database Configuration
+if (string.IsNullOrWhiteSpace(jwtKey) ||
+    Encoding.UTF8.GetByteCount(jwtKey) < 32)
+{
+    throw new InvalidOperationException(
+        "JWT Key must be configured and contain at least 32 bytes."
+    );
+}
+
+if (string.IsNullOrWhiteSpace(jwtIssuer) ||
+    string.IsNullOrWhiteSpace(jwtAudience))
+{
+    throw new InvalidOperationException(
+        "JWT Issuer and Audience must be configured."
+    );
+}
+
+var jwtSigningKey = new SymmetricSecurityKey(
+    Encoding.UTF8.GetBytes(jwtKey)
+);
+
+// =====================================
+// Database Configuration
+// =====================================
+
 var connectionString = builder.Configuration
     .GetConnectionString("DefaultConnection");
 
@@ -29,9 +75,12 @@ builder.Services.AddDbContext<TVJROKDbContext>(options =>
 {
     if (builder.Environment.IsProduction())
     {
-        // Convert Render PostgreSQL URL to Npgsql connection string
-        if (Uri.TryCreate(connectionString, UriKind.Absolute, out var uri)
-            && (uri.Scheme == "postgres" || uri.Scheme == "postgresql"))
+        if (Uri.TryCreate(
+            connectionString,
+            UriKind.Absolute,
+            out var uri) &&
+            (uri.Scheme == "postgres" ||
+             uri.Scheme == "postgresql"))
         {
             var userInfo = uri.UserInfo.Split(':', 2);
 
@@ -74,65 +123,128 @@ builder.Services.AddDbContext<TVJROKDbContext>(options =>
     }
 });
 
+// =====================================
+// Authentication
+// =====================================
 
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters =
+            new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = jwtIssuer,
 
+                ValidateAudience = true,
+                ValidAudience = jwtAudience,
 
-// API Services
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = jwtSigningKey,
+
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.FromSeconds(30),
+
+                NameClaimType = ClaimTypes.Name,
+                RoleClaimType = ClaimTypes.Role
+            };
+    });
+
+// =====================================
+// Authorization
+// =====================================
+
+builder.Services.AddAuthorization(options =>
+{
+    // Protect endpoints by default.
+    // Public endpoints must explicitly use [AllowAnonymous].
+    options.FallbackPolicy =
+        new AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .Build();
+});
+
+// =====================================
+// Controllers
+// =====================================
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(
-            new System.Text.Json.Serialization.JsonStringEnumConverter()
+            new JsonStringEnumConverter()
         );
     });
 
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+// =====================================
+// Swagger + JWT Bearer
+// =====================================
 
+builder.Services.AddEndpointsApiExplorer();
+
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "TVJROK.API",
+        Version = "v1"
+    });
+
+    options.AddSecurityDefinition(
+        "Bearer",
+        new OpenApiSecurityScheme
+        {
+            Name = "Authorization",
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            In = ParameterLocation.Header,
+            Description = "Enter your JWT Bearer token."
+        }
+    );
+
+    // Add lock icon only to endpoints with [Authorize].
+    options.OperationFilter<AuthorizeOperationFilter>();
+});
+
+// =====================================
+// Admin Authentication Services
+// =====================================
+
+builder.Services.AddScoped<
+    IPasswordHasher<Admin>,
+    PasswordHasher<Admin>>();
+
+builder.Services.AddScoped<IAuthService, AuthService>();
+
+// =====================================
 // Application Services
+// =====================================
+
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<IProductImageService, ProductImageService>();
 
-// Restaurant Settings Service
 builder.Services.AddScoped<
     IRestaurantSettingService,
-    RestaurantSettingService
->();
+    RestaurantSettingService>();
 
-// payment services
 builder.Services.AddScoped<IPaymentService, PaymentService>();
-builder.Services.AddScoped<
-    IPaymentReceiptService,
-    PaymentReceiptService>();
+builder.Services.AddScoped<IPaymentReceiptService, PaymentReceiptService>();
 
-// Table Service
 builder.Services.AddScoped<ITableService, TableService>();
-
-// Order Service
 builder.Services.AddScoped<IOrderService, OrderService>();
 
-// Payment Service
-builder.Services.AddScoped<IPaymentService, PaymentService>();
+// =====================================
+// Supabase Storage
+// =====================================
 
-// Supabase Storage Service
 builder.Services.AddHttpClient<SupabaseStorageService>();
 
-builder.Services.AddScoped<
-    IProductImageService,
-    ProductImageService>();
-    
-// Supabase Storage Service
-builder.Services.AddHttpClient<SupabaseStorageService>();
-
-// Category Service
-builder.Services.AddScoped<ICategoryService, CategoryService>();
-
-// Product Service
-builder.Services.AddScoped<IProductService, ProductService>();
-
-// CORS for React + Vite
+// =====================================
+// CORS
+// =====================================
 
 builder.Services.AddCors(options =>
 {
@@ -148,18 +260,51 @@ builder.Services.AddCors(options =>
     });
 });
 
+// =====================================
+// Build Application
+// =====================================
 
 var app = builder.Build();
 
-// Swagger Configuration
+// =====================================
+// Swagger
+// =====================================
+
 app.UseSwagger();
 app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
 
+// =====================================
+// CORS
+// =====================================
+
 app.UseCors("ReactFrontend");
 
+// =====================================
+// Authentication & Authorization
+// =====================================
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+// =====================================
+// Map Controllers
+// =====================================
 
 app.MapControllers();
+
+// =====================================
+// Bootstrap First Admin
+// =====================================
+
+await AdminSeeder.SeedAsync(
+    app.Services,
+    app.Configuration
+);
+
+// =====================================
+// Run Application
+// =====================================
 
 app.Run();
